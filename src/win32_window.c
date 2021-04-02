@@ -501,7 +501,17 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             case WM_NCCREATE:
             {
                 if (_glfwIsWindows10AnniversaryUpdateOrGreaterWin32())
-                    EnableNonClientDpiScaling(hWnd);
+                {
+                    const CREATESTRUCTW* cs = (const CREATESTRUCTW*) lParam;
+                    const _GLFWwndconfig* wndconfig = cs->lpCreateParams;
+
+                    // On per-monitor DPI aware V1 systems, only enable
+                    // non-client scaling for windows that scale the client area
+                    // We need WM_GETDPISCALEDSIZE from V2 to keep the client
+                    // area static when the non-client area is scaled
+                    if (wndconfig && wndconfig->scaleToMonitor)
+                        EnableNonClientDpiScaling(hWnd);
+                }
 
                 break;
             }
@@ -1138,9 +1148,11 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             const float xscale = HIWORD(wParam) / (float) USER_DEFAULT_SCREEN_DPI;
             const float yscale = LOWORD(wParam) / (float) USER_DEFAULT_SCREEN_DPI;
 
-            // Only apply the suggested size if the OS is new enough to have
-            // sent a WM_GETDPISCALEDSIZE before this
-            if (_glfwIsWindows10CreatorsUpdateOrGreaterWin32())
+            // Resize windowed mode windows that either permit rescaling or that
+            // need it to compensate for non-client area scaling
+            if (!window->monitor &&
+                (window->win32.scaleToMonitor ||
+                 _glfwIsWindows10CreatorsUpdateOrGreaterWin32()))
             {
                 RECT* suggested = (RECT*) lParam;
                 SetWindowPos(window->win32.handle, HWND_TOP,
@@ -1255,7 +1267,7 @@ static int createNativeWindow(_GLFWwindow* window,
                                            NULL, // No parent window
                                            NULL, // No window menu
                                            GetModuleHandleW(NULL),
-                                           NULL);
+                                           (LPVOID) wndconfig);
 
     free(wideTitle);
 
@@ -2123,30 +2135,41 @@ int _glfwPlatformCreateStandardCursor(_GLFWcursor* cursor, int shape)
 {
     int id = 0;
 
-    if (shape == GLFW_ARROW_CURSOR)
-        id = OCR_NORMAL;
-    else if (shape == GLFW_IBEAM_CURSOR)
-        id = OCR_IBEAM;
-    else if (shape == GLFW_CROSSHAIR_CURSOR)
-        id = OCR_CROSS;
-    else if (shape == GLFW_POINTING_HAND_CURSOR)
-        id = OCR_HAND;
-    else if (shape == GLFW_RESIZE_EW_CURSOR)
-        id = OCR_SIZEWE;
-    else if (shape == GLFW_RESIZE_NS_CURSOR)
-        id = OCR_SIZENS;
-    else if (shape == GLFW_RESIZE_NWSE_CURSOR)
-        id = OCR_SIZENWSE;
-    else if (shape == GLFW_RESIZE_NESW_CURSOR)
-        id = OCR_SIZENESW;
-    else if (shape == GLFW_RESIZE_ALL_CURSOR)
-        id = OCR_SIZEALL;
-    else if (shape == GLFW_NOT_ALLOWED_CURSOR)
-        id = OCR_NO;
-    else
+    switch (shape)
     {
-        _glfwInputError(GLFW_PLATFORM_ERROR, "Win32: Unknown standard cursor");
-        return GLFW_FALSE;
+        case GLFW_ARROW_CURSOR:
+            id = OCR_NORMAL;
+            break;
+        case GLFW_IBEAM_CURSOR:
+            id = OCR_IBEAM;
+            break;
+        case GLFW_CROSSHAIR_CURSOR:
+            id = OCR_CROSS;
+            break;
+        case GLFW_POINTING_HAND_CURSOR:
+            id = OCR_HAND;
+            break;
+        case GLFW_RESIZE_EW_CURSOR:
+            id = OCR_SIZEWE;
+            break;
+        case GLFW_RESIZE_NS_CURSOR:
+            id = OCR_SIZENS;
+            break;
+        case GLFW_RESIZE_NWSE_CURSOR:
+            id = OCR_SIZENWSE;
+            break;
+        case GLFW_RESIZE_NESW_CURSOR:
+            id = OCR_SIZENESW;
+            break;
+        case GLFW_RESIZE_ALL_CURSOR:
+            id = OCR_SIZEALL;
+            break;
+        case GLFW_NOT_ALLOWED_CURSOR:
+            id = OCR_NO;
+            break;
+        default:
+            _glfwInputError(GLFW_PLATFORM_ERROR, "Win32: Unknown standard cursor");
+            return GLFW_FALSE;
     }
 
     cursor->win32.handle = LoadImageW(NULL,
